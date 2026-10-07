@@ -18,6 +18,8 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include <stdint.h>
+#include <stdio.h>
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -50,6 +52,8 @@ ADC_HandleTypeDef hadc1;
 
 TIM_HandleTypeDef htim1;
 
+UART_HandleTypeDef huart2;
+
 /* USER CODE BEGIN PV */
 
 /* USER CODE END PV */
@@ -59,6 +63,7 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_ADC1_Init(void);
 static void MX_TIM1_Init(void);
+static void MX_USART2_UART_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -66,17 +71,23 @@ static void MX_TIM1_Init(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
+/* -- PRINTF -- */
+static int __io_putchar(int ch) {
+  HAL_UART_Transmit(&huart2, (uint8_t *)&ch, 1, 0xFFFF);
+  return ch; 
+}
+
 /* -- Aufgabenteil B - Messung der Spannung -- **/
 static float read_voltage(void) {
   uint32_t raw_value;
   float voltage;
 
-  // Start the ADC conversion
+  // Start the ADC conversion from an analog to a digital signal
   HAL_ADC_Start(&hadc1);
 
   // Wait for the conversion to complete with a timeout of 100ms
   if (HAL_ADC_PollForConversion(&hadc1, 100) == HAL_OK) {
-      // Get the raw 12-bit digital value (0 - 4095)
+      // Get the raw 12-bit value (0 - 4095)
       raw_value = HAL_ADC_GetValue(&hadc1);
       
       // Convert raw value to voltage (3.3V ref_volatge and 12-bit ADC resolution)
@@ -86,11 +97,38 @@ static float read_voltage(void) {
       HAL_ADC_Stop(&hadc1);
 
       return voltage;
-  }
 
-  // Stop the ADC
-  HAL_ADC_Stop(&hadc1);
-  return 0.0F;
+  } else {
+
+    // Stop the ADC after timeout
+    HAL_ADC_Stop(&hadc1);
+    return 0.0F;
+
+  }
+}
+
+/* -- Aufgabenteil B - gleitender Mittelwert Filter -- **/
+#define WINDOW_SIZE 8 // "N", must be power of 2 for fast shifting
+
+typedef struct {
+  uint32_t buffer[WINDOW_SIZE]; // contains last N-Values (size depending on WINDOW_SIZE)
+  uint32_t sum;                 // sum of all values in window, updated on every new incoming N
+  uint8_t head;                 // points to oldest entry
+} MovingAverage;
+
+uint32_t moving_average_update(MovingAverage *filter, uint32_t new_sample) {
+  // Subtract oldest sample that is about to be overwritten
+  filter->sum -= filter->buffer[filter->head];
+
+  // Add new sample to the buffer and running sum
+  filter->buffer[filter->head] = new_sample;
+  filter->sum += new_sample;
+
+  // Advance the circular buffer head index
+  filter->head = (filter->head + 1) & (WINDOW_SIZE - 1); // `& (WINDOW_SIZE - 1)` is a faster equal to `% 8`
+
+  // Return average (using bit shift for division by 8; here 3, because 2^3 = 8)
+  return (filter->sum >> 3); // equivalent to filter->sum / 8 to 
 }
 
 /* USER CODE END 0 */
@@ -126,7 +164,10 @@ int main(void)
   MX_GPIO_Init();
   MX_ADC1_Init();
   MX_TIM1_Init();
+  MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
+
+  char buffer[100] = ""; // buffer to write into
 
   /* USER CODE END 2 */
 
@@ -152,7 +193,8 @@ int main(void)
     HAL_Delay(1000);
 
     /* -- Aufgabenteil B - Messung der Spannung -- **/
-    read_voltage();
+    snprintf(buffer, 100, "Voltage read from ADC %.6f", read_voltage());
+    printf("%s\n", buffer);
 
     /* USER CODE END WHILE */
 
@@ -336,6 +378,39 @@ static void MX_TIM1_Init(void)
 }
 
 /**
+  * @brief USART2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_USART2_UART_Init(void)
+{
+
+  /* USER CODE BEGIN USART2_Init 0 */
+
+  /* USER CODE END USART2_Init 0 */
+
+  /* USER CODE BEGIN USART2_Init 1 */
+
+  /* USER CODE END USART2_Init 1 */
+  huart2.Instance = USART2;
+  huart2.Init.BaudRate = 115200;
+  huart2.Init.WordLength = UART_WORDLENGTH_8B;
+  huart2.Init.StopBits = UART_STOPBITS_1;
+  huart2.Init.Parity = UART_PARITY_NONE;
+  huart2.Init.Mode = UART_MODE_TX_RX;
+  huart2.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart2.Init.OverSampling = UART_OVERSAMPLING_16;
+  if (HAL_UART_Init(&huart2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN USART2_Init 2 */
+
+  /* USER CODE END USART2_Init 2 */
+
+}
+
+/**
   * @brief GPIO Initialization Function
   * @param None
   * @retval None
@@ -360,14 +435,6 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   GPIO_InitStruct.Alternate = GPIO_AF15_EVENTOUT;
   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
-
-  /*Configure GPIO pins : USART_TX_Pin USART_RX_Pin */
-  GPIO_InitStruct.Pin = USART_TX_Pin|USART_RX_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
-  GPIO_InitStruct.Alternate = GPIO_AF7_USART2;
-  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
   /* USER CODE BEGIN MX_GPIO_Init_2 */
 
