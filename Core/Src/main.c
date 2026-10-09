@@ -18,6 +18,8 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "stm32f4xx_hal_adc.h"
+#include "stm32f4xx_hal_gpio.h"
 #include <stdint.h>
 #include <stdio.h>
 
@@ -71,16 +73,19 @@ static void MX_USART2_UART_Init(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-/* -- PRINTF -- */
-static int __io_putchar(int ch) {
-  HAL_UART_Transmit(&huart2, (uint8_t *)&ch, 1, 0xFFFF);
-  return ch; 
-}
+/* -------------------------------------------------*/
+/* -- Aufgabenteil B -- **/
+/* -------------------------------------------------*/
 
-/* -- Aufgabenteil B - Messung der Spannung -- **/
-static float read_voltage(void) {
-  uint32_t raw_value;
-  float voltage;
+/* -- Messung der Spannung -- */
+static float cur_voltage = 0.0f; // variable for STM32Cube Live Watch
+static float cur_voltage_avg = 0.0f; // variable for STM32Cube Live Watch
+static uint32_t adc_reading_int = 0.0f; // variable for STM32Cube Live Watch
+static float avg_adc_reading_float = 0.0f; // variable for STM32Cube Live Watch
+static uint32_t avg_adc_reading_int = 0.0f; // variable for STM32Cube Live Watch
+
+uint32_t read_adc(void) {
+  uint32_t reading;
 
   // Start the ADC conversion from an analog to a digital signal
   HAL_ADC_Start(&hadc1);
@@ -88,47 +93,114 @@ static float read_voltage(void) {
   // Wait for the conversion to complete with a timeout of 100ms
   if (HAL_ADC_PollForConversion(&hadc1, 100) == HAL_OK) {
       // Get the raw 12-bit value (0 - 4095)
-      raw_value = HAL_ADC_GetValue(&hadc1);
-      
-      // Convert raw value to voltage (3.3V ref_volatge and 12-bit ADC resolution)
-      voltage = (float)raw_value * (3.3f / 4095.0f);
+      reading = HAL_ADC_GetValue(&hadc1);
 
       // Stop the ADC
       HAL_ADC_Stop(&hadc1);
 
-      return voltage;
+      return reading;
 
   } else {
 
     // Stop the ADC after timeout
     HAL_ADC_Stop(&hadc1);
-    return 0.0F;
-
+    return 0;
   }
 }
 
-/* -- Aufgabenteil B - gleitender Mittelwert Filter -- **/
-#define WINDOW_SIZE 8 // "N", must be power of 2 for fast shifting
+/* -- gleitender Mittelwert Filter -- **/
+// Window size (N)
+#define WINDOW 32
+static uint32_t mov_avg_index = 0;
 
-typedef struct {
-  uint32_t buffer[WINDOW_SIZE]; // contains last N-Values (size depending on WINDOW_SIZE)
-  uint32_t sum;                 // sum of all values in window, updated on every new incoming N
-  uint8_t head;                 // points to oldest entry
-} MovingAverage;
+// Moving average buffer and sum for int
+static uint32_t buffer_int[WINDOW] = {0};
+static uint32_t sum_int = 0;
 
-uint32_t moving_average_update(MovingAverage *filter, uint32_t new_sample) {
-  // Subtract oldest sample that is about to be overwritten
-  filter->sum -= filter->buffer[filter->head];
+// Int-Filter
+uint32_t read_adc_avg_int(void) {
 
-  // Add new sample to the buffer and running sum
-  filter->buffer[filter->head] = new_sample;
-  filter->sum += new_sample;
+  // Start the ADC conversion from an analog to a digital signal
+  HAL_ADC_Start(&hadc1);
 
-  // Advance the circular buffer head index
-  filter->head = (filter->head + 1) & (WINDOW_SIZE - 1); // `& (WINDOW_SIZE - 1)` is a faster equal to `% 8`
+  // Wait for the conversion to complete with a timeout of 100ms
+  if (HAL_ADC_PollForConversion(&hadc1, 100) == HAL_OK) {
+  
+    uint32_t raw_value = HAL_ADC_GetValue(&hadc1);
 
-  // Return average (using bit shift for division by 8; here 3, because 2^3 = 8)
-  return (filter->sum >> 3); // equivalent to filter->sum / 8 to 
+    // Calculate current moving average:
+    sum_int -= buffer_int[mov_avg_index];           // subtract oldest value in window from the sum
+    buffer_int[mov_avg_index] = raw_value;          // add new value to the window
+    sum_int += raw_value;                           // add the new value to the sum
+    mov_avg_index = (mov_avg_index + 1) % WINDOW;   // loop through the window with modolu
+
+    HAL_ADC_Stop(&hadc1);
+
+    return (sum_int >> 5); // because WINDOW = 32 = 2^5 --> right shift by 5
+  
+  } else {
+
+    // Stop the ADC after timeout
+    HAL_ADC_Stop(&hadc1);
+    return (sum_int >> 5);
+  }
+}
+
+// Moving average buffer and sum for float
+static float buffer_float[WINDOW] = {0.0f};
+static float sum_float = 0.0f;
+
+// Float-Filter
+float read_adc_avg_float(void) {
+
+  // Start the ADC conversion from an analog to a digital signal
+  HAL_ADC_Start(&hadc1);
+
+  // Wait for the conversion to complete with a timeout of 100ms
+  if (HAL_ADC_PollForConversion(&hadc1, 100) == HAL_OK) {
+  
+    float raw_value = HAL_ADC_GetValue(&hadc1);
+
+    // Calculate current moving average:
+    sum_float -= buffer_float[mov_avg_index];          // subtract oldest value in window from the sum
+    buffer_float[mov_avg_index] = raw_value;           // add new value to the window
+    sum_float += raw_value;                            // add the new value to the sum
+    mov_avg_index = (mov_avg_index + 1) % WINDOW;      // loop through the window, by going back to 0 with modulo
+
+    HAL_ADC_Stop(&hadc1);
+
+    return (sum_float / WINDOW);
+  
+  } else {
+
+    // Stop the ADC after timeout
+    HAL_ADC_Stop(&hadc1);
+    return (sum_float / WINDOW);
+  }
+}
+
+
+/* -- Toggle der LED bei bestimmter Spannung -- */
+void toggle_led(void) {
+
+      // uint32_t value = read_adc();      // Take current adc reading
+      uint32_t value = read_adc_avg_int();  // Take average adc reading
+      
+      // Observation Note: 
+      // when the read value (single) are near the threshhold (2048) the LED will flicker, because the value fluctuates
+      // when the avg is read, the LED will flicker less the greater the window
+      
+      // Check if value from ADC is above 2048, if true -> set pin, otherwise reset (LED on/off)
+      if(value >= 2048) {
+        HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_SET);
+      } else {
+        HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_RESET);
+      }
+}
+
+float convert_to_voltage(uint32_t adc_reading) {
+    // Convert value to voltage (3.3V reference voltage and 12-bit ADC resolution)
+    return (float)adc_reading * (3.3f / 4095.0f);
 }
 
 /* USER CODE END 0 */
@@ -146,7 +218,7 @@ int main(void)
 
   /* MCU Configuration--------------------------------------------------------*/
 
-  /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
+  /* Reset of all peripherals, Initializes the Flash interface and the Systick. */  
   HAL_Init();
 
   /* USER CODE BEGIN Init */
@@ -167,7 +239,6 @@ int main(void)
   MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
 
-  char buffer[100] = ""; // buffer to write into
 
   /* USER CODE END 2 */
 
@@ -189,12 +260,16 @@ int main(void)
   while (1)
   {
     /** -- Aufgabenteil A - Toggeln der LED -- */
-    HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
-    HAL_Delay(1000);
+    //HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
+    //HAL_Delay(1000);
 
     /* -- Aufgabenteil B - Messung der Spannung -- **/
-    snprintf(buffer, 100, "Voltage read from ADC %.6f", read_voltage());
-    printf("%s\n", buffer);
+    cur_voltage = convert_to_voltage(read_adc_avg_float());
+    cur_voltage_avg = convert_to_voltage(read_adc_avg_int());
+    avg_adc_reading_int = read_adc_avg_int();
+    avg_adc_reading_float = read_adc_avg_float();
+
+    toggle_led(); // toggle led with current adc reading
 
     /* USER CODE END WHILE */
 
