@@ -18,10 +18,6 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
-#include "stm32f4xx_hal_adc.h"
-#include "stm32f4xx_hal_gpio.h"
-#include <stdint.h>
-#include <stdio.h>
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -203,6 +199,30 @@ float convert_to_voltage(uint32_t adc_reading) {
     return (float)adc_reading * (3.3f / 4095.0f);
 }
 
+/* ------------------------------------------ */
+/* -- Aufgabenteil C -- */
+/* -------------------------------------------*/
+
+// Toggle LED 
+void toggle_led_button() {
+
+  HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_0);
+  //HAL_GPIO_WritePin(GPIOC, GPIO_PIN_0, GPIO_PIN_SET);   // Turn LED ON
+  //HAL_GPIO_WritePin(GPIOC, GPIO_PIN_0, GPIO_PIN_RESET); // Turn LED OFF
+}
+
+// LED PWM
+#define ADC_MAX 4095    // max adc
+
+void led_brightness_pwm() {
+
+  uint32_t cur_adc_avg = read_adc_avg_int();
+
+  uint32_t capture_compare_reg = (cur_adc_avg * 1000U) / ADC_MAX; // normalized to 0 - 1000; so i.e. -> 4096 = 1000 (1000%)
+
+  __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, capture_compare_reg);
+}
+
 /* USER CODE END 0 */
 
 /**
@@ -218,7 +238,7 @@ int main(void)
 
   /* MCU Configuration--------------------------------------------------------*/
 
-  /* Reset of all peripherals, Initializes the Flash interface and the Systick. */  
+  /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
   HAL_Init();
 
   /* USER CODE BEGIN Init */
@@ -239,6 +259,8 @@ int main(void)
   MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
 
+  // Start PWM Signal (Time 1, Channel 1)
+  HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);
 
   /* USER CODE END 2 */
 
@@ -270,6 +292,8 @@ int main(void)
     avg_adc_reading_float = read_adc_avg_float();
 
     toggle_led(); // toggle led with current adc reading
+
+    led_brightness_pwm(); // determine brightness for external led
 
     /* USER CODE END WHILE */
 
@@ -424,7 +448,7 @@ static void MX_TIM1_Init(void)
     Error_Handler();
   }
   sConfigOC.OCMode = TIM_OCMODE_PWM1;
-  sConfigOC.Pulse = 2048;
+  sConfigOC.Pulse = 0;
   sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
   sConfigOC.OCNPolarity = TIM_OCNPOLARITY_HIGH;
   sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
@@ -492,7 +516,6 @@ static void MX_USART2_UART_Init(void)
   */
 static void MX_GPIO_Init(void)
 {
-  GPIO_InitTypeDef GPIO_InitStruct = {0};
   /* USER CODE BEGIN MX_GPIO_Init_1 */
 
   /* USER CODE END MX_GPIO_Init_1 */
@@ -501,15 +524,6 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOH_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
-  __HAL_RCC_GPIOB_CLK_ENABLE();
-
-  /*Configure GPIO pin : PC13 */
-  GPIO_InitStruct.Pin = GPIO_PIN_13;
-  GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  GPIO_InitStruct.Alternate = GPIO_AF15_EVENTOUT;
-  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
   /* USER CODE BEGIN MX_GPIO_Init_2 */
 
