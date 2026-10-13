@@ -203,22 +203,18 @@ float convert_to_voltage(uint32_t adc_reading) {
 /* -- Aufgabenteil C -- */
 /* -------------------------------------------*/
 
-// Toggle LED 
-void toggle_led_button() {
+/* -- LED Dimmer / PWM -- */
+#define ADC_MAX 4095u // max adc (here 12-Bit)
+#define PWM_ARR 999u  // counter period (set in cubemx) -> 1000 duty steps
 
-  HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_0);
-  //HAL_GPIO_WritePin(GPIOC, GPIO_PIN_0, GPIO_PIN_SET);   // Turn LED ON
-  //HAL_GPIO_WritePin(GPIOC, GPIO_PIN_0, GPIO_PIN_RESET); // Turn LED OFF
-}
-
-// LED PWM
-#define ADC_MAX 4095    // max adc
-
+// Controlling brightness with average adc value
 void led_brightness_pwm() {
 
+  // Get current adc average
   uint32_t cur_adc_avg = read_adc_avg_int();
 
-  uint32_t capture_compare_reg = (cur_adc_avg * 1000U) / ADC_MAX; // normalized to 0 - 1000; so i.e. -> 4096 = 1000 (1000%)
+  // Calculate value to be compared
+  uint32_t capture_compare_reg = (cur_adc_avg * (PWM_ARR + 1) ) / ADC_MAX; // i.e. (1450 * 1000) / 4095 = 354 -> 35,4 % pwm
 
   __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, capture_compare_reg);
 }
@@ -259,8 +255,21 @@ int main(void)
   MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
 
+  /* ----------------------------- */
+  /* -- Aufgabenteil C -- */
+
+  // Set to 10ms at runtime (1 µs * 10.000 = 10ms)
+  //__HAL_TIM_SET_PRESCALER(&htim1, 83);        // PSC = 83 -> 84/84 = 1MHz = 1 µs
+  //__HAL_TIM_SET_AUTORELOAD(&htim1, 9999);     // 10.000 ticks
+
+  // Set to 100ms at runtime (10 µs * 10.000 = 10ms)
+  //__HAL_TIM_SET_PRESCALER(&htim1, 839);       // PSC = 839 -> 84/840 = 0,1 MHz = 10 µs
+  //__HAL_TIM_SET_AUTORELOAD(&htim1, 9999);     // 10.000 ticks
+
   // Start PWM Signal (Time 1, Channel 1)
   HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);
+
+  /* ----------------------------- */
 
   /* USER CODE END 2 */
 
@@ -422,9 +431,9 @@ static void MX_TIM1_Init(void)
 
   /* USER CODE END TIM1_Init 1 */
   htim1.Instance = TIM1;
-  htim1.Init.Prescaler = 64;
+  htim1.Init.Prescaler = 83;
   htim1.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim1.Init.Period = 4095;
+  htim1.Init.Period = 999;
   htim1.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim1.Init.RepetitionCounter = 0;
   htim1.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
