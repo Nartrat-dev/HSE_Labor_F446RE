@@ -45,7 +45,6 @@
 
 /* Private variables ---------------------------------------------------------*/
 
-__IO uint32_t BspButtonState = BUTTON_RELEASED;
 ADC_HandleTypeDef hadc1;
 
 TIM_HandleTypeDef htim1;
@@ -219,6 +218,18 @@ void led_brightness_pwm() {
   __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, capture_compare_reg);
 }
 
+/* ------------------------------------------ */
+/* -- Aufgabenteil D -- */
+/* -------------------------------------------*/
+
+// Interrupt Callback
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+  if (GPIO_Pin == GPIO_PIN_13)
+  {
+    HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5); // Toggle LED
+  }
+}
 /* USER CODE END 0 */
 
 /**
@@ -263,28 +274,22 @@ int main(void)
   //__HAL_TIM_SET_AUTORELOAD(&htim1, 9999);     // 10.000 ticks
 
   // Set to 100ms at runtime (10 µs * 10.000 = 10ms)
-  //__HAL_TIM_SET_PRESCALER(&htim1, 839);       // PSC = 839 -> 84/840 = 0,1 MHz = 10 µs
   //__HAL_TIM_SET_AUTORELOAD(&htim1, 9999);     // 10.000 ticks
+  //__HAL_TIM_SET_PRESCALER(&htim1, 839);       // PSC = 839 -> 84/840 = 0,1 MHz = 10 µs
 
   // Start PWM Signal (Time 1, Channel 1)
   HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);
 
   /* ----------------------------- */
 
+  /* ----------------------------- */
+  /* -- Aufgabenteil D -- */
+
+
+  
+  /* ----------------------------- */
+
   /* USER CODE END 2 */
-
-  /* Initialize leds */
-  BSP_LED_Init(LED2);
-
-  /* Initialize USER push-button, will be used to trigger an interrupt each time it's pressed.*/
-  BSP_PB_Init(BUTTON_USER, BUTTON_MODE_EXTI);
-
-  /* USER CODE BEGIN BSP */
-
-  /* -- Sample board code to switch on leds ---- */
-  BSP_LED_On(LED2);
-
-  /* USER CODE END BSP */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
@@ -300,8 +305,9 @@ int main(void)
     avg_adc_reading_int = read_adc_avg_int();
     avg_adc_reading_float = read_adc_avg_float();
 
-    toggle_led(); // toggle led with current adc reading
+    //toggle_led(); // toggle led with current adc reading
 
+    /* -- Aufgabenteil C - Dimmen der LED -- **/
     led_brightness_pwm(); // determine brightness for external led
 
     /* USER CODE END WHILE */
@@ -525,6 +531,7 @@ static void MX_USART2_UART_Init(void)
   */
 static void MX_GPIO_Init(void)
 {
+  GPIO_InitTypeDef GPIO_InitStruct = {0};
   /* USER CODE BEGIN MX_GPIO_Init_1 */
 
   /* USER CODE END MX_GPIO_Init_1 */
@@ -534,6 +541,26 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOH_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
 
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(LED2_GPIO_Port, LED2_Pin, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin : PC13 */
+  GPIO_InitStruct.Pin = GPIO_PIN_13;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : LED2_Pin */
+  GPIO_InitStruct.Pin = LED2_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(LED2_GPIO_Port, &GPIO_InitStruct);
+
+  /* EXTI interrupt init*/
+  HAL_NVIC_SetPriority(EXTI15_10_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
+
   /* USER CODE BEGIN MX_GPIO_Init_2 */
 
   /* USER CODE END MX_GPIO_Init_2 */
@@ -542,19 +569,6 @@ static void MX_GPIO_Init(void)
 /* USER CODE BEGIN 4 */
 
 /* USER CODE END 4 */
-
-/**
-  * @brief EXTI line detection callbacks
-  * @param GPIO_Pin: Specifies the pins connected EXTI line
-  * @retval None
-  */
-void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
-{
-  if(GPIO_Pin==USER_BUTTON_PIN)
-  {
-    BspButtonState = BUTTON_PRESSED;
-  }
-}
 
 /**
   * @brief  This function is executed in case of error occurrence.
